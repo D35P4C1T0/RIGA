@@ -31,8 +31,8 @@ def main():
     parser.add_argument('--build-dir', type=Path, default=Path('build'))
     parser.add_argument('--output', type=Path, default=Path('dist'))
     parser.add_argument('--architecture', default=platform.machine())
-    parser.add_argument('--platform', choices=['macOS', 'Windows'],
-                        default='macOS' if platform.system() == 'Darwin' else 'Windows')
+    parser.add_argument('--platform', choices=['macOS', 'Windows', 'Linux'],
+                        default={'Darwin': 'macOS', 'Windows': 'Windows', 'Linux': 'Linux'}.get(platform.system()))
     parser.add_argument('--source-only', action='store_true')
     args = parser.parse_args()
     root = Path(__file__).resolve().parent.parent
@@ -43,7 +43,7 @@ def main():
     write_archive(outputs[0], common + [(root / name, name) for name in sources])
     if not args.source_only:
         artifacts = args.build_dir / 'Riga_artefacts' / 'Release'
-        app = 'Riga.app' if args.platform == 'macOS' else 'Riga.exe'
+        app = {'macOS': 'Riga.app', 'Windows': 'Riga.exe', 'Linux': 'Riga'}[args.platform]
         outputs.append(args.output / f'Riga-{args.platform}-{args.architecture}.zip')
         write_archive(outputs[-1], common + [(artifacts / 'VST3/Riga.vst3', 'Riga.vst3'),
                                            (artifacts / 'Standalone' / app, app)])

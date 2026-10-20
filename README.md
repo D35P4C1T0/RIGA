@@ -1,6 +1,6 @@
 # RIGA
 
-Tone shaping, dynamics and analogue colour in a Swiss-inspired channel strip. Available as VST3 and a standalone application on macOS and Windows.
+Tone shaping, dynamics and analogue colour in a Swiss-inspired channel strip. Available as VST3 and a standalone application on macOS, Windows and Linux.
 
 ![Riga editor](docs/editor.png)
 
@@ -22,7 +22,7 @@ The low EQ knobs change from charcoal to brown with the EQ curve. Gate knob colo
 
 Requires CMake 3.22 or newer, a C++17 compiler and JUCE 8.0.13. CMake downloads JUCE automatically; use `-DJUCE_PATH=/path/to/JUCE` to use a local checkout instead.
 
-On macOS, install the Xcode command-line tools. On Windows, use a Visual Studio developer shell with the C++ tools and Windows SDK installed.
+On Linux, install the ALSA, JACK, FreeType, Fontconfig and X11 development packages listed in `.github/workflows/build.yml`. On macOS, install the Xcode command-line tools. On Windows, use a Visual Studio developer shell with the C++ tools and Windows SDK installed.
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -32,10 +32,10 @@ ctest --test-dir build -C Release --output-on-failure
 
 Build outputs are in `build/Riga_artefacts/Release/`:
 
-| Format | macOS | Windows |
-|---|---|---|
-| VST3 | `VST3/Riga.vst3` | `VST3/Riga.vst3` |
-| Standalone | `Standalone/Riga.app` | `Standalone/Riga.exe` |
+| Format | macOS | Windows | Linux |
+|---|---|---|---|
+| VST3 | `VST3/Riga.vst3` | `VST3/Riga.vst3` | `VST3/Riga.vst3` |
+| Standalone | `Standalone/Riga.app` | `Standalone/Riga.exe` | `Standalone/Riga` |
 
 ## Install
 
@@ -44,7 +44,9 @@ Close your audio host before replacing an installed plugin.
 - **macOS:** copy the complete `Riga.vst3` bundle to `~/Library/Audio/Plug-Ins/VST3/`. Copy `Riga.app` to `~/Applications/`.
 - **Windows:** copy the complete `Riga.vst3` directory to `C:\Program Files\Common Files\VST3\`. Keep the standalone executable in a folder of your choice.
 
-Restart your host and rescan plugins if necessary. Release archives are platform-specific: the current macOS package targets Apple Silicon; the Windows package targets x64.
+- **Linux:** copy the complete `Riga.vst3` directory to `~/.vst3/`. Keep the standalone `Riga` executable in a folder of your choice.
+
+Restart your host and rescan plugins if necessary. Release archives are platform-specific: the current macOS package targets Apple Silicon; the Windows and Linux packages target x64.
 
 ## Development
 
@@ -76,7 +78,9 @@ See [validation notes](docs/validation.md) for test coverage and [contribution n
 
 ## Automated builds
 
-The GitHub Actions workflow builds and tests macOS universal and Windows x64 binaries on pushes, pull requests and manual runs. A separate Linux job tests the DSP engine. Platform archives are retained for 30 days; version tags beginning with `v` publish the validated archives to GitHub Releases. The workflow takes effect after this repository is pushed to GitHub.
+The GitHub Actions workflow builds and tests Windows x64 and Linux x64 VST3 and standalone binaries on pushes, pull requests and manual runs. Linux editor checks use a virtual display. Platform archives are retained for 30 days.
+
+Version tags beginning with `v` create a draft release containing the validated Windows and Linux archives. Add the locally built, signed macOS package before publishing the draft. macOS release binaries are built locally on Apple Silicon.
 
 Create local archives with:
 
@@ -84,7 +88,7 @@ Create local archives with:
 python3 tools/package.py --architecture arm64
 ```
 
-Use `--architecture x64 --platform Windows` on Windows, or `--source-only` to package just the source. Output is written to `dist/`, with SHA-256 checksums. macOS release bundles should be signed before packaging; the workflow applies ad hoc signatures.
+Use `--architecture x64 --platform Windows` on Windows, `--architecture x64 --platform Linux` on Linux, or `--source-only` to package just the source. Output is written to `dist/`, with SHA-256 checksums. macOS release bundles should be signed before packaging; the local release build uses ad hoc signatures.
 
 ## Source layout
 

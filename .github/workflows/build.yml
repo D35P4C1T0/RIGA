@@ -21,9 +21,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-15
-            platform: macOS-universal
-            architecture: universal
+          - os: ubuntu-22.04
+            platform: Linux-x64
+            architecture: x64
           - os: windows-2022
             platform: Windows-x64
             architecture: x64
@@ -35,20 +35,31 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Configure macOS
-        if: runner.os == 'macOS'
-        run: >-
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-          -DBUILD_TESTING=ON -DSTRIP_EDITOR_CHECK=ON
-          "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
-          -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            libasound2-dev libjack-jackd2-dev libfontconfig1-dev libfreetype6-dev \
+            libx11-dev libxcomposite-dev libxcursor-dev libxext-dev \
+            libxinerama-dev libxrandr-dev libxrender-dev \
+            libglu1-mesa-dev mesa-common-dev xvfb xauth
+
+      - name: Configure Linux
+        if: runner.os == 'Linux'
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DSTRIP_EDITOR_CHECK=ON
 
       - name: Configure Windows
         if: runner.os == 'Windows'
         run: cmake -S . -B build -A x64 -DBUILD_TESTING=ON -DSTRIP_EDITOR_CHECK=ON
 
       - name: Build
-        run: cmake --build build --config Release --parallel 2
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            xvfb-run -a cmake --build build --config Release --parallel 2
+          else
+            cmake --build build --config Release --parallel 2
+          fi
 
       - name: Test DSP
         run: ctest --test-dir build -C Release --output-on-failure
@@ -57,17 +68,11 @@ jobs:
         run: |
           suffix=""
           if [[ "$RUNNER_OS" == "Windows" ]]; then suffix=".exe"; fi
-          "build/strip-editor-check_artefacts/Release/strip-editor-check${suffix}" build/editor.png
-
-      - name: Sign and verify macOS bundles
-        if: runner.os == 'macOS'
-        run: |
-          output=build/Riga_artefacts/Release
-          for bundle in "$output/VST3/Riga.vst3" "$output/Standalone/Riga.app"; do
-            codesign --force --deep --sign - "$bundle"
-            codesign --verify --deep --strict "$bundle"
-            lipo "$bundle/Contents/MacOS/Riga" -verify_arch arm64 x86_64
-          done
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            xvfb-run -a build/strip-editor-check_artefacts/Release/strip-editor-check build/editor.png
+          else
+            "build/strip-editor-check_artefacts/Release/strip-editor-check${suffix}" build/editor.png
+          fi
 
       - name: Package
         run: python tools/package.py --architecture "${{ matrix.architecture }}"
@@ -91,21 +96,10 @@ jobs:
             build/editor.png
           if-no-files-found: ignore
 
-  dsp-linux:
-    name: Linux DSP checks
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-      - run: cmake -S . -B build -DSTRIP_DSP_ONLY=ON -DCMAKE_BUILD_TYPE=Release
-      - run: cmake --build build --parallel 2
-      - run: ctest --test-dir build --output-on-failure
-
   release:
     name: Publish tagged release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build, dsp-linux]
+    needs: build
     runs-on: ubuntu-22.04
     permissions:
       actions: read
@@ -120,5 +114,6 @@ jobs:
         run: |
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || \
             gh release create "$GITHUB_REF_NAME" --verify-tag \
-              --title "Riga ${GITHUB_REF_NAME#v}" --generate-notes
+              --title "Riga $GITHUB_REF_NAME" --draft \
+              --notes "Windows and Linux builds validated by GitHub Actions. macOS assets are added from a local build before publication."
           gh release upload "$GITHUB_REF_NAME" release-assets/*/* --clobber
