@@ -23,16 +23,46 @@ int main(int argc, char **argv) {
     }
     gain->setValueNotifyingHost(.5f);
     std::unique_ptr<juce::AudioProcessorEditor> editor(processor.createEditor());
-    auto image = editor->createComponentSnapshot(editor->getLocalBounds());
-    if (!image.isValid())
+    if (editor->getWidth() != 540 || editor->getHeight() != 1000)
         return 1;
-    if (argc > 1) {
-        juce::File file = juce::File::getCurrentWorkingDirectory().getChildFile(argv[1]);
+    for (const auto &spec : strip::parameterSpecs) {
+        auto *control = editor->findChildWithID(spec.id);
+        if (control == nullptr || !control->isVisible() || control->getBounds().isEmpty() ||
+            !editor->getLocalBounds().contains(control->getBounds())) {
+            std::fprintf(stderr, "Missing or clipped control: %s\n", spec.id);
+            return 1;
+        }
+        for (auto *other : editor->getChildren())
+            if (control != other && control->getBounds().intersects(other->getBounds())) {
+                std::fprintf(stderr, "Overlapping control: %s\n", spec.id);
+                return 1;
+            }
+    }
+    auto saveSnapshot = [&](const juce::Image &image, int argument) {
+        if (!image.isValid())
+            return false;
+        if (argc <= argument)
+            return true;
+        juce::File file = juce::File::getCurrentWorkingDirectory().getChildFile(argv[argument]);
         file.deleteFile();
         juce::FileOutputStream output(file);
-        if (!output.openedOk() || !juce::PNGImageFormat().writeImageToStream(image, output))
-            return 1;
-    }
+        return output.openedOk() && juce::PNGImageFormat().writeImageToStream(image, output);
+    };
+    auto dark = editor->createComponentSnapshot(editor->getLocalBounds());
+    if (!saveSnapshot(dark, 1))
+        return 1;
+    auto *theme = dynamic_cast<juce::ToggleButton *>(editor->findChildWithID("theme"));
+    if (theme == nullptr || !theme->getToggleState())
+        return 1;
+    theme->setToggleState(false, juce::sendNotification);
+    auto light = editor->createComponentSnapshot(editor->getLocalBounds());
+    if (!saveSnapshot(light, 2) ||
+        dark.getPixelAt(0, 0).getBrightness() >= light.getPixelAt(0, 0).getBrightness())
+        return 1;
+    theme->setToggleState(true, juce::sendNotification);
+    auto restored = editor->createComponentSnapshot(editor->getLocalBounds());
+    if (restored.getPixelAt(0, 0) != dark.getPixelAt(0, 0))
+        return 1;
     juce::AudioBuffer<float> audio(2, 1024);
     audio.clear();
     audio.setSample(0, 0, .5f);
@@ -56,6 +86,6 @@ int main(int argc, char **argv) {
     for (int i = 0; i < monoAudio.getNumSamples(); ++i)
         if (!std::isfinite(monoAudio.getSample(0, i)))
             return 1;
-    std::puts("PASS: state restoration, editor snapshot, oversized host buffer");
+    std::puts("PASS: state restoration, control layout, dark/light snapshots, oversized host buffer");
     return 0;
 }

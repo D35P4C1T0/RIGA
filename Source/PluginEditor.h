@@ -17,6 +17,7 @@ class StripAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     StripAudioProcessor &processor;
     std::unique_ptr<Style> style;
     std::array<std::unique_ptr<Control>, strip::parameterCount> controls;
+    juce::ToggleButton theme;
     juce::TooltipWindow tooltips{this, 600};
     StripAudioProcessor::MeterValues levels{};
 };

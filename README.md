@@ -4,7 +4,7 @@ Tone shaping, dynamics and analogue colour in a Swiss-inspired channel strip. Av
 
 ![Riga editor](docs/editor.png)
 
-Riga combines filters, a compressor, a gate/expander and a four-band EQ in a compact, Swiss-inspired interface. Its 860 × 736 vector editor uses a clear grid, warm off-white surfaces and colour-coded knobs.
+Riga combines filters, a compressor, a gate/expander and a four-band EQ in a compact, Swiss-inspired interface. Its 540 × 1000 vector editor uses a narrow two-column grid, colour-coded knobs and a dark theme. The header theme button switches to warm off-white surfaces.
 
 ## Controls
 
@@ -58,7 +58,7 @@ cmake --build build-dsp --config Release --parallel 4
 ctest --test-dir build-dsp -C Release --output-on-failure
 ```
 
-Enable `-DSTRIP_EDITOR_CHECK=ON` in a JUCE build for the editor snapshot and state checks. Run `strip-editor-check` with an optional output PNG path.
+Enable `-DSTRIP_EDITOR_CHECK=ON` in a JUCE build for the editor snapshot and state checks. Run `strip-editor-check` with optional dark and light output PNG paths. The checks verify that every control fits without overlaps and that theme switching works.
 
 `strip-render` reads and writes little-endian, interleaved stereo float32 audio without a file header:
 

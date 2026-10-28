@@ -2,8 +2,10 @@
 #include <cmath>
 
 namespace {
-const juce::Colour background(0xffeeede7), panel(0xfffaf9f5), ink(0xff202320), muted(0xff70736c);
-const juce::Colour red(0xffdf3c2f), rule(0xffd4d5cc), track(0xffdedfd6);
+struct Palette {
+    juce::Colour background{0xffeeede7}, panel{0xfffaf9f5}, ink{0xff202320}, muted{0xff70736c};
+    juce::Colour red{0xffdf3c2f}, rule{0xffd4d5cc}, track{0xffdedfd6};
+};
 juce::Font type(float size, bool bold = false) {
     return juce::Font(juce::FontOptions(
 #if JUCE_MAC
@@ -133,9 +135,17 @@ juce::String shortName(strip::Param p) {
 }
 } // namespace
 
-class StripAudioProcessorEditor::Style final : public juce::LookAndFeel_V4 {
+class StripAudioProcessorEditor::Style final : public juce::LookAndFeel_V4, public Palette {
   public:
     Style() {
+        setDark(true);
+    }
+    void setDark(bool dark) {
+        static_cast<Palette &>(*this) =
+            dark ? Palette{juce::Colour(0xff161918), juce::Colour(0xff202422), juce::Colour(0xffeeede7),
+                           juce::Colour(0xffa6ada6), juce::Colour(0xfff05a47), juce::Colour(0xff414843),
+                           juce::Colour(0xff353d37)}
+                 : Palette{};
         setColour(juce::Label::textColourId, ink);
         setColour(juce::ComboBox::backgroundColourId, panel);
         setColour(juce::ComboBox::outlineColourId, rule);
@@ -143,7 +153,7 @@ class StripAudioProcessorEditor::Style final : public juce::LookAndFeel_V4 {
         setColour(juce::PopupMenu::backgroundColourId, panel);
         setColour(juce::PopupMenu::textColourId, ink);
         setColour(juce::PopupMenu::highlightedBackgroundColourId, red);
-        setColour(juce::PopupMenu::highlightedTextColourId, panel);
+        setColour(juce::PopupMenu::highlightedTextColourId, juce::Colours::white);
         setColour(juce::TooltipWindow::backgroundColourId, ink);
         setColour(juce::TooltipWindow::textColourId, panel);
         setColour(juce::TooltipWindow::outlineColourId, ink);
@@ -167,10 +177,7 @@ class StripAudioProcessorEditor::Style final : public juce::LookAndFeel_V4 {
         auto *label = LookAndFeel_V4::createSliderTextBox(slider);
         label->setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
         label->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
-        label->setColour(juce::Label::textColourId, ink);
         label->setFont(type(11.5f, true));
-        label->setColour(juce::TextEditor::textColourId, ink);
-        label->setColour(juce::TextEditor::backgroundColourId, panel);
         label->setColour(juce::TextEditor::highlightColourId, red.withAlpha(.2f));
         return label;
     }
@@ -208,7 +215,8 @@ class StripAudioProcessorEditor::Style final : public juce::LookAndFeel_V4 {
         g.fillEllipse(c.x - radius + 5, c.y - radius + 5, (radius - 5) * 2, (radius - 5) * 2);
         g.setColour(ink.withAlpha(.35f));
         g.drawEllipse(c.x - radius + 5, c.y - radius + 5, (radius - 5) * 2, (radius - 5) * 2, .8f);
-        g.setColour(colour.getPerceivedBrightness() > .65f ? ink : panel);
+        g.setColour(colour.getPerceivedBrightness() > .65f ? juce::Colour(0xff202320)
+                                                           : juce::Colour(0xfffaf9f5));
         g.drawLine(c.x + std::sin(angle) * 1, c.y - std::cos(angle) * 1, c.x + std::sin(angle) * (radius - 8),
                    c.y - std::cos(angle) * (radius - 8), 2);
         if (bipolar) {
@@ -225,7 +233,7 @@ class StripAudioProcessorEditor::Style final : public juce::LookAndFeel_V4 {
             g.setColour(hover ? muted : rule);
             g.drawRect(r, .7f);
         }
-        g.setColour(active ? panel : ink);
+        g.setColour(active ? juce::Colours::white : ink);
         g.setFont(type(9.5f, true));
         g.drawFittedText(button.getButtonText(), r.toNearestInt().reduced(4, 1), juce::Justification::centred,
                          2);
@@ -265,6 +273,7 @@ class StripAudioProcessorEditor::Control final : public juce::Component {
   public:
     Control(StripAudioProcessor &p, strip::Param parameter) : processor(p), id(parameter) {
         const auto &spec = strip::parameterSpecs[strip::index(id)];
+        setComponentID(spec.id);
         name.setText(shortName(id), juce::dontSendNotification);
         name.setFont(type(9.5f, true));
         name.setJustificationType(juce::Justification::centred);
@@ -324,7 +333,6 @@ class StripAudioProcessorEditor::Control final : public juce::Component {
                                            id == strip::Param::lowMidGain || id == strip::Param::lowGain ||
                                            id == strip::Param::inputGain);
             refreshColour();
-            slider.setColour(juce::Slider::textBoxTextColourId, ink);
             slider.setColour(juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
             slider.setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
             slider.setTooltip(spec.name);
@@ -428,7 +436,18 @@ StripAudioProcessorEditor::StripAudioProcessorEditor(StripAudioProcessor &p)
         controls[i] = std::make_unique<Control>(processor, static_cast<strip::Param>(i));
         addAndMakeVisible(*controls[i]);
     }
-    setSize(860, 736);
+    theme.setComponentID("theme");
+    theme.setButtonText("DARK");
+    theme.setTooltip("Switch between dark and light themes");
+    theme.setToggleState(true, juce::dontSendNotification);
+    theme.onClick = [this] {
+        style->setDark(theme.getToggleState());
+        theme.setButtonText(theme.getToggleState() ? "DARK" : "LIGHT");
+        sendLookAndFeelChange();
+        repaint();
+    };
+    addAndMakeVisible(theme);
+    setSize(540, 1000);
     startTimerHz(30);
 }
 StripAudioProcessorEditor::~StripAudioProcessorEditor() {
@@ -440,8 +459,9 @@ void StripAudioProcessorEditor::place(strip::Param p, int x, int y, int w, int h
 }
 void StripAudioProcessorEditor::resized() {
     using P = strip::Param;
-    place(P::setting, 644, 10, 80, 44);
-    place(P::bypass, 740, 24, 104, 26);
+    theme.setBounds(378, 24, 62, 26);
+    place(P::setting, 302, 10, 66, 44);
+    place(P::bypass, 450, 24, 74, 26);
     place(P::hpfFreq, 28, 104, 100, 76);
     place(P::lpfFreq, 140, 104, 100, 76);
     place(P::hpfOn, 28, 182, 42, 22);
@@ -452,59 +472,61 @@ void StripAudioProcessorEditor::resized() {
     const P comp[]{P::ratio,   P::compThreshold, P::compRelease,
                    P::compMix, P::sidechainHP,   P::secondThreshold};
     for (int i = 0; i < 6; ++i)
-        place(comp[i], 28 + (i % 3) * 72, 280 + (i / 3) * 74, 72, 72);
-    place(P::compFast, 28, 430, 104, 22);
-    place(P::compLink, 136, 430, 104, 22);
-    place(P::gateRange, 28, 496, 72, 72);
-    place(P::gateThreshold, 100, 496, 72, 72);
-    place(P::gateRelease, 172, 496, 72, 72);
-    place(P::hysteresis, 28, 572, 72, 72);
-    place(P::gateFast, 106, 576, 134, 24);
-    place(P::gateMode, 106, 606, 84, 24);
-    place(P::gateInvert, 194, 606, 46, 24);
-    place(P::gateThresholdRange, 28, 650, 104, 24);
-    place(P::vcaMode, 136, 650, 104, 24);
-    place(P::externalKey, 28, 678, 104, 22);
-    place(P::dynamicsOn, 136, 678, 104, 22);
-    place(P::highGain, 292, 106, 104, 82);
-    place(P::highFreq, 408, 106, 104, 82);
-    place(P::highBell, 438, 192, 78, 22);
-    place(P::highMidGain, 292, 262, 72, 96);
-    place(P::highMidFreq, 364, 262, 72, 96);
-    place(P::highMidQ, 436, 262, 72, 96);
-    place(P::lowMidGain, 292, 418, 72, 96);
-    place(P::lowMidFreq, 364, 418, 72, 96);
-    place(P::lowMidQ, 436, 418, 72, 96);
-    place(P::lowGain, 292, 568, 104, 84);
-    place(P::lowFreq, 408, 568, 104, 84);
-    place(P::lowBell, 438, 542, 78, 22);
-    place(P::eqType, 292, 680, 84, 24);
-    place(P::eqOn, 382, 680, 50, 24);
-    place(P::eqPosition, 440, 668, 76, 36);
-    place(P::inputGain, 556, 106, 88, 96);
-    place(P::noise, 652, 106, 88, 96);
-    place(P::drive, 748, 106, 88, 96);
-    place(P::channel, 556, 210, 130, 40);
-    place(P::monitor, 698, 210, 138, 40);
-    place(P::stereoMode, 556, 262, 130, 24);
-    place(P::power, 698, 262, 64, 24);
-    place(P::phase, 768, 262, 68, 24);
-    place(P::mute, 778, 82, 58, 22);
-    place(P::outputGain, 760, 342, 76, 356);
-    place(P::meterPosition, 556, 676, 180, 22);
+        place(comp[i], 288 + (i % 3) * 72, 104 + (i / 3) * 70, 72, 70);
+    place(P::compFast, 288, 248, 104, 22);
+    place(P::compLink, 396, 248, 116, 22);
+    place(P::gateRange, 288, 320, 72, 72);
+    place(P::gateThreshold, 360, 320, 72, 72);
+    place(P::gateRelease, 432, 320, 72, 72);
+    place(P::hysteresis, 288, 396, 72, 72);
+    place(P::gateFast, 366, 400, 146, 24);
+    place(P::gateMode, 366, 430, 88, 24);
+    place(P::gateInvert, 458, 430, 54, 24);
+    place(P::gateThresholdRange, 288, 470, 108, 22);
+    place(P::vcaMode, 400, 470, 112, 22);
+    place(P::externalKey, 288, 498, 108, 22);
+    place(P::dynamicsOn, 400, 498, 112, 22);
+    place(P::highGain, 28, 286, 100, 80);
+    place(P::highFreq, 140, 286, 100, 80);
+    place(P::highBell, 154, 368, 86, 22);
+    place(P::highMidGain, 28, 444, 72, 96);
+    place(P::highMidFreq, 100, 444, 72, 96);
+    place(P::highMidQ, 172, 444, 72, 96);
+    place(P::lowMidGain, 28, 600, 72, 96);
+    place(P::lowMidFreq, 100, 600, 72, 96);
+    place(P::lowMidQ, 172, 600, 72, 96);
+    place(P::lowGain, 28, 754, 100, 80);
+    place(P::lowFreq, 140, 754, 100, 80);
+    place(P::lowBell, 154, 836, 86, 22);
+    place(P::eqType, 28, 920, 84, 28);
+    place(P::eqOn, 118, 920, 44, 28);
+    place(P::eqPosition, 170, 906, 78, 42);
+    place(P::inputGain, 288, 570, 72, 76);
+    place(P::noise, 360, 570, 72, 76);
+    place(P::drive, 432, 570, 72, 76);
+    place(P::channel, 288, 650, 108, 40);
+    place(P::monitor, 404, 650, 108, 40);
+    place(P::stereoMode, 288, 698, 108, 24);
+    place(P::power, 400, 698, 54, 24);
+    place(P::phase, 458, 698, 54, 24);
+    place(P::mute, 454, 746, 58, 22);
+    place(P::outputGain, 444, 778, 68, 180);
+    place(P::meterPosition, 288, 942, 144, 22);
 }
 
 void StripAudioProcessorEditor::paint(juce::Graphics &g) {
+    const auto [background, panel, ink, muted, red, rule, track] = static_cast<const Palette &>(*style);
     g.fillAll(background);
-    auto section = [&](int x, int y, int w, int h, const juce::String &number, const juce::String &title) {
-        g.setColour(panel);
+    auto section = [&g, this](int x, int y, int w, int h, const juce::String &number,
+                              const juce::String &title) {
+        g.setColour(style->panel);
         g.fillRect(x, y, w, h);
-        g.setColour(rule);
+        g.setColour(style->rule);
         g.drawHorizontalLine(y, float(x), float(x + w));
-        g.setColour(red);
+        g.setColour(style->red);
         g.setFont(type(9, true));
         g.drawText(number, x + 12, y + 9, 22, 18, juce::Justification::centredLeft);
-        g.setColour(ink);
+        g.setColour(style->ink);
         g.setFont(type(14, true));
         g.drawText(title, x + 40, y + 6, w - 52, 24, juce::Justification::centredLeft);
     };
@@ -515,29 +537,30 @@ void StripAudioProcessorEditor::paint(juce::Graphics &g) {
     g.fillRect(112, 40, 7, 7);
     g.setColour(ink);
     g.setFont(type(11));
-    g.drawText("Tone / Dynamics", 156, 19, 250, 18, juce::Justification::centredLeft);
+    g.drawText("Tone / Dynamics", 140, 19, 150, 18, juce::Justification::centredLeft);
     g.setColour(muted);
     g.setFont(type(9));
-    g.drawText("LOCAL AUDIO", 156, 36, 250, 14, juce::Justification::centredLeft);
+    g.drawText("LOCAL AUDIO", 140, 36, 150, 14, juce::Justification::centredLeft);
     g.setColour(ink);
-    g.drawHorizontalLine(62, 16, 844);
+    g.drawHorizontalLine(62, 16, 524);
     section(16, 72, 248, 168, "01", "Filters");
-    section(16, 252, 248, 204, "02", "Compressor");
-    section(16, 468, 248, 236, "03", "Gate / Expander");
-    section(280, 72, 248, 144, "04", "High");
-    section(280, 228, 248, 144, "05", "High mid");
-    section(280, 384, 248, 144, "06", "Low mid");
-    section(280, 540, 248, 116, "07", "Low");
-    section(544, 72, 300, 228, "08", "Input / Colour");
-    section(544, 312, 300, 392, "09", "Levels / Output");
+    section(16, 252, 248, 144, "02", "High");
+    section(16, 408, 248, 144, "03", "High mid");
+    section(16, 564, 248, 144, "04", "Low mid");
+    section(16, 720, 248, 144, "05", "Low");
+    section(16, 876, 248, 88, "06", "EQ / Routing");
+    section(276, 72, 248, 204, "07", "Compressor");
+    section(276, 288, 248, 236, "08", "Gate / Expander");
+    section(276, 536, 248, 192, "09", "Input / Colour");
+    section(276, 740, 248, 224, "10", "Levels");
     const float in[]{levels.inputL, levels.inputR, levels.outputL, levels.outputR};
     const char *names[]{"IN L", "IN R", "OUT L", "OUT R"};
-    constexpr float top = 384, bottom = 606, height = bottom - top;
+    constexpr float top = 794, bottom = 884, height = bottom - top;
     for (int i = 0; i < 4; ++i) {
-        const int x = 568 + i * 44;
+        const int x = 298 + i * 32 + (i >= 2 ? 8 : 0);
         g.setFont(type(8.5f, true));
         g.setColour(muted);
-        g.drawText(names[i], x - 10, 358, 34, 18, juce::Justification::centred);
+        g.drawText(names[i], x - 10, 774, 34, 18, juce::Justification::centred);
         g.setColour(track);
         g.fillRect(x, int(top), 14, int(height));
         const float db = juce::Decibels::gainToDecibels(juce::jmax(.000001f, in[i]));
@@ -550,34 +573,34 @@ void StripAudioProcessorEditor::paint(juce::Graphics &g) {
         }
         g.setColour(ink);
         g.setFont(type(10));
-        g.drawText(db <= -60 ? juce::String("-inf") : juce::String(db, 1), x - 12, 612, 38, 18,
+        g.drawText(db <= -60 ? juce::String("-inf") : juce::String(db, 1), x - 12, 888, 38, 18,
                    juce::Justification::centred);
     }
     g.setColour(rule);
-    g.drawVerticalLine(642, 354, 632);
+    g.drawVerticalLine(360, 778, 908);
     const float reductions[]{levels.compression, levels.gate};
     const char *names2[]{"COMP", "GATE"};
     for (int i = 0; i < 2; ++i) {
-        const int y = 640 + i * 18;
+        const int y = 916 + i * 16;
         g.setFont(type(8, true));
         g.setColour(muted);
-        g.drawText(names2[i], 556, y - 4, 36, 16, juce::Justification::centredLeft);
+        g.drawText(names2[i], 288, y - 4, 36, 16, juce::Justification::centredLeft);
         g.setColour(track);
-        g.fillRect(596, y, 138, 4);
+        g.fillRect(328, y, 104, 4);
         g.setColour(red);
-        g.fillRect(596.0f, float(y), 138 * juce::jlimit(0.0f, 1.0f, reductions[i] / 30), 4.0f);
+        g.fillRect(328.0f, float(y), 104 * juce::jlimit(0.0f, 1.0f, reductions[i] / 30), 4.0f);
     }
     g.setColour(rule);
-    g.drawHorizontalLine(716, 16, 844);
+    g.drawHorizontalLine(976, 16, 524);
     g.setColour(muted);
     g.setFont(type(9));
-    g.drawText("RIGA / 01", 16, 718, 170, 16, juce::Justification::centredLeft);
-    g.drawText("Double-click to reset / Click a value to edit", 400, 718, 444, 16,
+    g.drawText("RIGA / 01", 16, 980, 120, 16, juce::Justification::centredLeft);
+    g.drawText("Double-click to reset / Click a value to edit", 150, 980, 374, 16,
                juce::Justification::centredRight);
 }
 void StripAudioProcessorEditor::timerCallback() {
     for (auto &c : controls)
         c->refreshContext();
     levels = processor.meterValues();
-    repaint(550, 350, 192, 320);
+    repaint(288, 774, 148, 166);
 }
