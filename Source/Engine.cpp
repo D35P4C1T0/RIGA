@@ -95,7 +95,7 @@ void Engine::setParameters(const Parameters &parameters) {
     outputGain = static_cast<float>(
         std::pow(10.0, physical(Param::outputGain, values[index(Param::outputGain)]) * 0.05));
     const double noiseDb = physical(Param::noise, values[index(Param::noise)]);
-    noise = static_cast<float>(std::clamp(std::pow(10.0, noiseDb * 0.05), 1e-6, 0.00031622776601683794));
+    noise = static_cast<float>(std::clamp(std::pow(10.0, noiseDb * 0.05), 0.0, 0.00031622776601683794));
     const double amplitude = std::pow(10.0, physical(Param::drive, values[index(Param::drive)]) * 0.05);
     constexpr double scale = 1.0001643499350519;
     cubicLinear = static_cast<float>(1.0 + 3.0 * amplitude);

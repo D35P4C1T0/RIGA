@@ -4,12 +4,37 @@
 namespace {
 class NormalizedParameter final : public juce::AudioParameterFloat {
   public:
-    NormalizedParameter(const strip::ParamSpec &s, const juce::AudioParameterFloatAttributes &attributes)
+    NormalizedParameter(const strip::ParamSpec &s, const juce::AudioParameterFloatAttributes &attributes,
+                        std::atomic<int> &selectedBank)
         : AudioParameterFloat(
               juce::ParameterID(s.id, 1), s.name,
               juce::NormalisableRange<float>(0.0f, 1.0f, s.steps > 0 ? 1.0f / float(s.steps) : 0.0f),
               s.initial, attributes),
-          intervals(s.steps) {}
+          initial(s.initial), intervals(s.steps), setting(juce::String(s.id) == "setting"),
+          activeBank(selectedBank) {
+        for (auto &value : banks)
+            value.store(s.initial);
+    }
+    float getDefaultValue() const override {
+        return initial;
+    }
+    float getValue() const override {
+        return getBankValue(activeBank.load());
+    }
+    void setValue(float value) override {
+        value = std::isfinite(value) ? juce::jlimit(0.0f, 1.0f, value) : getDefaultValue();
+        if (setting)
+            activeBank.store(static_cast<int>(std::lround(value * 3)));
+        else
+            setBankValue(activeBank.load(), value);
+    }
+    float getBankValue(int bank) const {
+        return setting ? float(bank) / 3 : banks[static_cast<std::size_t>(bank)].load();
+    }
+    void setBankValue(int bank, float value) {
+        value = std::isfinite(value) ? juce::jlimit(0.0f, 1.0f, value) : getDefaultValue();
+        banks[static_cast<std::size_t>(bank)].store(convertFrom0to1(value));
+    }
     int getNumSteps() const override {
         return intervals > 0 ? intervals + 1 : juce::AudioProcessor::getDefaultNumParameterSteps();
     }
@@ -21,11 +46,16 @@ class NormalizedParameter final : public juce::AudioParameterFloat {
     }
 
   private:
+    float initial;
     int intervals;
+    bool setting;
+    std::atomic<int> &activeBank;
+    std::array<std::atomic<float>, 4> banks;
 };
 } // namespace
 
-juce::AudioProcessorValueTreeState::ParameterLayout StripAudioProcessor::makeLayout() {
+juce::AudioProcessorValueTreeState::ParameterLayout
+StripAudioProcessor::makeLayout(std::atomic<int> &activeBank) {
     juce::AudioProcessorValueTreeState::ParameterLayout result;
     for (std::size_t i = 0; i < strip::parameterCount; ++i) {
         const auto &s = strip::parameterSpecs[i];
@@ -60,7 +90,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout StripAudioProcessor::makeLay
                              }
                              return static_cast<float>(best);
                          });
-        result.add(std::make_unique<NormalizedParameter>(s, attrs));
+        result.add(std::make_unique<NormalizedParameter>(s, attrs, activeBank));
     }
     return result;
 }
@@ -70,9 +100,9 @@ StripAudioProcessor::StripAudioProcessor()
                          .withInput("Input", juce::AudioChannelSet::stereo(), true)
                          .withOutput("Output", juce::AudioChannelSet::stereo(), true)
                          .withInput("External Key", juce::AudioChannelSet::stereo(), false)),
-      state(*this, nullptr, "StripState", makeLayout()) {
-    for (std::size_t i = 0; i < raw.size(); ++i)
-        raw[i] = state.getRawParameterValue(strip::parameterSpecs[i].id);
+      state(*this, nullptr, "StripState", makeLayout(activeBank)) {
+    for (std::size_t i = 0; i < parameters.size(); ++i)
+        parameters[i] = state.getParameter(strip::parameterSpecs[i].id);
     state.addParameterListener("setting", this);
 }
 
@@ -105,8 +135,9 @@ void StripAudioProcessor::processBlockBypassed(juce::AudioBuffer<float> &buffer,
 void StripAudioProcessor::render(juce::AudioBuffer<float> &buffer, bool hostBypass) {
     juce::ScopedNoDenormals noDenormals;
     strip::Parameters values{};
+    const int bank = activeBank.load();
     for (std::size_t i = 0; i < values.size(); ++i)
-        values[i] = raw[i]->load(std::memory_order_relaxed);
+        values[i] = static_cast<NormalizedParameter *>(parameters[i])->getBankValue(bank);
     if (hostBypass)
         values[strip::index(strip::Param::bypass)] = 1.0f;
     engine.setParameters(values);
@@ -149,8 +180,7 @@ StripAudioProcessor::~StripAudioProcessor() {
     cancelPendingUpdate();
 }
 int StripAudioProcessor::getCurrentProgram() {
-    return juce::jlimit(0, 3,
-                        static_cast<int>(std::lround(raw[strip::index(strip::Param::setting)]->load() * 3)));
+    return activeBank.load();
 }
 void StripAudioProcessor::setCurrentProgram(int i) {
     state.getParameter("setting")->setValueNotifyingHost(float(juce::jlimit(0, 3, i)) / 3);
@@ -166,29 +196,25 @@ void StripAudioProcessor::parameterChanged(const juce::String &, float) {
 void StripAudioProcessor::handleAsyncUpdate() {
     if (restoring.load())
         return;
-    const juce::ScopedLock lock(bankLock);
-    const int next = getCurrentProgram();
-    if (next == activeBank)
-        return;
-    for (std::size_t i = 0; i < raw.size(); ++i)
-        banks[static_cast<std::size_t>(activeBank)][i] = raw[i]->load();
-    activeBank = next;
-    for (std::size_t i = 0; i < raw.size(); ++i)
-        if (i != strip::index(strip::Param::setting))
-            state.getParameter(strip::parameterSpecs[i].id)
-                ->setValueNotifyingHost(banks[static_cast<std::size_t>(activeBank)][i]);
+    // Bank values already changed atomically; only refresh the host and UI here.
+    for (auto *parameter : parameters)
+        parameter->sendValueChangedMessageToListeners(parameter->getValue());
 }
 void StripAudioProcessor::getStateInformation(juce::MemoryBlock &data) {
     const juce::ScopedLock lock(bankLock);
     auto root = state.copyState();
     root.removeChild(root.getChildWithName("MemoryBanks"), nullptr);
     juce::ValueTree memories("MemoryBanks");
-    for (std::size_t bank = 0; bank < banks.size(); ++bank) {
+    const int selected = activeBank.load();
+    for (std::size_t i = 0; i < parameters.size(); ++i)
+        root.getChildWithProperty("id", strip::parameterSpecs[i].id)
+            .setProperty("value", static_cast<NormalizedParameter *>(parameters[i])->getBankValue(selected),
+                         nullptr);
+    for (int bank = 0; bank < 4; ++bank) {
         juce::ValueTree entry("Bank");
-        for (std::size_t i = 0; i < raw.size(); ++i)
+        for (std::size_t i = 0; i < parameters.size(); ++i)
             entry.setProperty(strip::parameterSpecs[i].id,
-                              static_cast<int>(bank) == activeBank ? raw[i]->load() : banks[bank][i],
-                              nullptr);
+                              static_cast<NormalizedParameter *>(parameters[i])->getBankValue(bank), nullptr);
         memories.addChild(entry, -1, nullptr);
     }
     root.addChild(memories, -1, nullptr);
@@ -204,18 +230,23 @@ void StripAudioProcessor::setStateInformation(const void *data, int size) {
     cancelPendingUpdate();
     auto root = juce::ValueTree::fromXml(*xml);
     auto memories = root.getChildWithName("MemoryBanks");
-    for (std::size_t bank = 0; bank < banks.size(); ++bank) {
-        banks[bank] = strip::defaults();
-        auto entry = memories.getChild(static_cast<int>(bank));
-        for (std::size_t i = 0; i < raw.size(); ++i)
-            if (entry.hasProperty(strip::parameterSpecs[i].id))
-                banks[bank][i] = juce::jlimit(
-                    0.0f, 1.0f, static_cast<float>(entry.getProperty(strip::parameterSpecs[i].id)));
+    const float selected = root.getChildWithProperty("id", "setting").getProperty("value", 0.0f);
+    activeBank.store(std::isfinite(selected) ? int(std::lround(juce::jlimit(0.0f, 1.0f, selected) * 3)) : 0);
+    for (int bank = 0; bank < 4; ++bank) {
+        auto entry = memories.getChild(bank);
+        for (std::size_t i = 0; i < parameters.size(); ++i) {
+            auto *parameter = static_cast<NormalizedParameter *>(parameters[i]);
+            parameter->setBankValue(
+                bank, entry.getProperty(strip::parameterSpecs[i].id, parameter->getDefaultValue()));
+            if (bank == activeBank.load())
+                parameter->setBankValue(bank, root.getChildWithProperty("id", strip::parameterSpecs[i].id)
+                                                  .getProperty("value", parameter->getDefaultValue()));
+        }
     }
     root.removeChild(memories, nullptr);
     state.replaceState(root);
-    activeBank = getCurrentProgram();
     restoring.store(false);
+    triggerAsyncUpdate();
 }
 juce::AudioProcessorEditor *StripAudioProcessor::createEditor() {
     return new StripAudioProcessorEditor(*this);

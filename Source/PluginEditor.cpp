@@ -161,8 +161,6 @@ juce::String shortName(strip::Param p) {
         return "EQ";
     case P::eqPosition:
         return "EQ ROUTING";
-    case P::meterPosition:
-        return "METER SOURCE";
     case P::stereoMode:
         return "VARIATION";
     case P::inputGain:
@@ -356,8 +354,6 @@ class StripAudioProcessorEditor::Control final : public juce::Component {
                     label = text.toUpperCase();
                 else if (id == P::filterPosition)
                     label = "ROUTE / " + text.toUpperCase();
-                else if (id == P::meterPosition)
-                    label = "METER / " + text.toUpperCase();
                 toggle.setButtonText(label);
             };
             addAndMakeVisible(toggle);
@@ -489,6 +485,9 @@ StripAudioProcessorEditor::StripAudioProcessorEditor(StripAudioProcessor &p)
     : AudioProcessorEditor(p), processor(p), style(std::make_unique<Style>()) {
     setLookAndFeel(style.get());
     for (std::size_t i = 0; i < controls.size(); ++i) {
+        // Both meter sources are visible; retain the host parameter for old sessions.
+        if (i == strip::index(strip::Param::meterPosition))
+            continue;
         controls[i] = std::make_unique<Control>(processor, static_cast<strip::Param>(i));
         addAndMakeVisible(*controls[i]);
     }
@@ -581,7 +580,6 @@ void StripAudioProcessorEditor::resized() {
     place(P::phase, 458, 698, 54, 24);
     place(P::mute, 454, 746, 58, 22);
     place(P::outputGain, 444, 778, 68, 180);
-    place(P::meterPosition, 288, 942, 144, 22);
 }
 
 void StripAudioProcessorEditor::paint(juce::Graphics &g) {
@@ -676,7 +674,8 @@ void StripAudioProcessorEditor::paint(juce::Graphics &g) {
 }
 void StripAudioProcessorEditor::timerCallback() {
     for (auto &c : controls)
-        c->refreshContext();
+        if (c)
+            c->refreshContext();
     levels = processor.meterValues();
     repaint(288, 774, 148, 166);
 }

@@ -7,6 +7,8 @@
 class StripAudioProcessor final : public juce::AudioProcessor,
                                   private juce::AudioProcessorValueTreeState::Listener,
                                   private juce::AsyncUpdater {
+    std::atomic<int> activeBank{0};
+
   public:
     StripAudioProcessor();
     ~StripAudioProcessor() override;
@@ -50,17 +52,14 @@ class StripAudioProcessor final : public juce::AudioProcessor,
     MeterValues meterValues() const noexcept;
 
   private:
-    static juce::AudioProcessorValueTreeState::ParameterLayout makeLayout();
+    static juce::AudioProcessorValueTreeState::ParameterLayout makeLayout(std::atomic<int> &);
     void render(juce::AudioBuffer<float> &, bool hostBypass);
     void parameterChanged(const juce::String &, float) override;
     void handleAsyncUpdate() override;
-    std::array<strip::Parameters, 4> banks{strip::defaults(), strip::defaults(), strip::defaults(),
-                                           strip::defaults()};
     juce::CriticalSection bankLock;
     std::atomic<bool> restoring{false};
-    int activeBank = 0;
     strip::Engine engine;
-    std::array<std::atomic<float> *, strip::parameterCount> raw{};
+    std::array<juce::RangedAudioParameter *, strip::parameterCount> parameters{};
     std::array<std::atomic<float>, 6> meterAtoms{};
     std::vector<float> monoScratch;
 };

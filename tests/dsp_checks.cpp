@@ -36,6 +36,19 @@ std::vector<float> render(double rate, int block, const strip::Parameters &p) {
 }
 } // namespace
 int main() {
+    for (float noise : {0.0f, .6f}) {
+        strip::Engine engine;
+        engine.prepare(48000, 256);
+        auto parameters = strip::defaults();
+        parameters[strip::index(strip::Param::noise)] = noise;
+        engine.setParameters(parameters);
+        engine.setNoiseSeed(1);
+        std::vector<float> left(4096), right(4096);
+        engine.process(left.data(), right.data(), nullptr, nullptr, 4096);
+        const bool silent = std::all_of(left.begin(), left.end(), [](float x) { return x == 0; }) &&
+                            std::all_of(right.begin(), right.end(), [](float x) { return x == 0; });
+        check(silent == (noise == 0), "noise off must be silent and noise on must generate audio");
+    }
     {
         strip::Engine engine;
         engine.prepare(48000, 256);

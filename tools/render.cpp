@@ -2,14 +2,38 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <random>
 #include <sstream>
+#include <stdexcept>
 #include <vector>
+
+namespace {
+struct TemporaryOutput {
+    std::filesystem::path directory;
+    explicit TemporaryOutput(const std::filesystem::path &destination) {
+        std::random_device random;
+        for (int attempt = 0; attempt < 16; ++attempt) {
+            auto candidate = destination.parent_path() / (".strip-render-" + std::to_string(random()));
+            if (std::filesystem::create_directory(candidate)) {
+                directory = std::move(candidate);
+                return;
+            }
+        }
+        throw std::runtime_error("Cannot create temporary output directory");
+    }
+    ~TemporaryOutput() {
+        std::error_code ignored;
+        std::filesystem::remove_all(directory, ignored);
+    }
+};
+} // namespace
 
 // Offline, stereo interleaved IEEE float32 renderer. Parameter files accept
 // stable parameter keys or measurement IDs followed by normalized values.
-int main(int argc, char **argv) {
+int main(int argc, char **argv) try {
     if (argc < 3) {
         std::cerr << "Usage: strip-render input.f32 output.f32 [parameters.txt] [sample-rate] [block-size] "
                      "[noise-seed] [settle-frames]\n";
@@ -54,12 +78,28 @@ int main(int argc, char **argv) {
         std::cerr << "Invalid processing setup\n";
         return 1;
     }
+    const auto destination = std::filesystem::absolute(argv[2]);
+    if (!std::filesystem::is_regular_file(argv[1]) ||
+        (std::filesystem::exists(destination) && (!std::filesystem::is_regular_file(destination) ||
+                                                  std::filesystem::equivalent(argv[1], destination)))) {
+        std::cerr << "Input must be a regular file and output must name a different file\n";
+        return 1;
+    }
     std::ifstream input(argv[1], std::ios::binary);
-    std::ofstream output(argv[2], std::ios::binary);
-    if (!input || !output) {
+    if (!input) {
+        std::cerr << "Cannot open input audio file\n";
+        return 1;
+    }
+    TemporaryOutput temporary(destination);
+    std::filesystem::permissions(temporary.directory, std::filesystem::perms::owner_all);
+    const auto temporaryFile = temporary.directory / "audio.f32";
+    std::ofstream output(temporaryFile, std::ios::binary);
+    if (!output) {
         std::cerr << "Cannot open audio file\n";
         return 1;
     }
+    if (std::filesystem::exists(destination))
+        std::filesystem::permissions(temporaryFile, std::filesystem::status(destination).permissions());
     strip::Engine engine;
     engine.prepare(rate, block);
     engine.setParameters(parameters);
@@ -97,8 +137,27 @@ int main(int argc, char **argv) {
             interleaved[static_cast<std::size_t>(i) * 2 + 1] = right[static_cast<std::size_t>(i)];
         }
         output.write(reinterpret_cast<const char *>(interleaved.data()), bytes);
+        if (!output) {
+            std::cerr << "Cannot write audio file\n";
+            return 1;
+        }
         frames += static_cast<std::size_t>(n);
     }
+    if (input.bad() || !input.eof()) {
+        std::cerr << "Cannot read audio file\n";
+        return 1;
+    }
+    input.clear();
+    input.close();
+    output.close();
+    if (!input || !output) {
+        std::cerr << "Cannot close audio file\n";
+        return 1;
+    }
+    std::filesystem::rename(temporaryFile, destination);
     std::cout << "Rendered " << frames << " stereo frames\n";
-    return output ? 0 : 1;
+    return 0;
+} catch (const std::exception &error) {
+    std::cerr << error.what() << '\n';
+    return 1;
 }

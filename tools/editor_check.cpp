@@ -1,14 +1,51 @@
 #include "PluginProcessor.h"
 #include <cstdio>
+#include <thread>
 
 int main(int argc, char **argv) {
     juce::ScopedJuceInitialiser_GUI gui;
     StripAudioProcessor processor;
     processor.prepareToPlay(48000, 256);
     auto *gain = processor.state.getParameter("inputGain");
+    {
+        StripAudioProcessor banked, reference;
+        banked.prepareToPlay(48000, 256);
+        reference.prepareToPlay(48000, 256);
+        banked.state.getParameter("inputGain")->setValueNotifyingHost(.9f);
+        std::thread([&] { banked.setCurrentProgram(1); }).join();
+        banked.state.getParameter("noise")->setValueNotifyingHost(0);
+        reference.state.getParameter("noise")->setValueNotifyingHost(0);
+        juce::AudioBuffer<float> actual(2, 256), expected(2, 256);
+        actual.clear();
+        expected.clear();
+        actual.setSample(0, 0, .5f);
+        expected.setSample(0, 0, .5f);
+        juce::MidiBuffer midi;
+        banked.processBlock(actual, midi);
+        reference.processBlock(expected, midi);
+        for (int channel = 0; channel < 2; ++channel)
+            for (int frame = 0; frame < 256; ++frame)
+                if (!(std::abs(actual.getSample(channel, frame) - expected.getSample(channel, frame)) <=
+                      1e-7f))
+                    return 1;
+    }
     gain->setValueNotifyingHost(.731f);
-    processor.setCurrentProgram(1);
+    std::thread([&] { processor.setCurrentProgram(1); }).join();
     if (std::abs(gain->getValue() - .5f) > 1e-6f)
+        return 1;
+    gain->setValueNotifyingHost(.2f);
+    std::thread([&] { processor.setCurrentProgram(0); }).join();
+    if (std::abs(gain->getValue() - .731f) > 1e-6f)
+        return 1;
+    processor.state.getParameter("setting")->setValueNotifyingHost(1.0f / 3);
+    if (std::abs(gain->getValue() - .2f) > 1e-6f)
+        return 1;
+    juce::MemoryBlock bankSaved;
+    processor.getStateInformation(bankSaved);
+    processor.setCurrentProgram(0);
+    gain->setValueNotifyingHost(.4f);
+    processor.setStateInformation(bankSaved.getData(), static_cast<int>(bankSaved.getSize()));
+    if (processor.getCurrentProgram() != 1 || std::abs(gain->getValue() - .2f) > 1e-6f)
         return 1;
     processor.setCurrentProgram(0);
     if (std::abs(gain->getValue() - .731f) > 1e-6f)
@@ -21,11 +58,27 @@ int main(int argc, char **argv) {
         std::fputs("State restoration failed\n", stderr);
         return 1;
     }
+    auto legacy = juce::ValueTree::fromXml(
+        *juce::AudioProcessor::getXmlFromBinary(saved.getData(), int(saved.getSize())));
+    legacy.removeChild(legacy.getChildWithName("MemoryBanks"), nullptr);
+    legacy.getChildWithProperty("id", "meterPosition").setProperty("value", 1.0f, nullptr);
+    juce::MemoryBlock legacySaved;
+    juce::AudioProcessor::copyXmlToBinary(*legacy.createXml(), legacySaved);
+    gain->setValueNotifyingHost(.1f);
+    processor.setStateInformation(legacySaved.getData(), int(legacySaved.getSize()));
+    if (std::abs(gain->getValue() - .731f) > 1e-6f ||
+        processor.state.getParameter("meterPosition")->getValue() != 1.0f)
+        return 1;
     gain->setValueNotifyingHost(.5f);
     std::unique_ptr<juce::AudioProcessorEditor> editor(processor.createEditor());
     if (editor->getWidth() != 540 || editor->getHeight() != 1000)
         return 1;
+    if (editor->findChildWithID("meterPosition") != nullptr ||
+        processor.state.getParameter("meterPosition") == nullptr)
+        return 1;
     for (const auto &spec : strip::parameterSpecs) {
+        if (juce::String(spec.id) == "meterPosition")
+            continue;
         auto *control = editor->findChildWithID(spec.id);
         if (control == nullptr || !control->isVisible() || control->getBounds().isEmpty() ||
             !editor->getLocalBounds().contains(control->getBounds())) {
@@ -142,6 +195,7 @@ int main(int argc, char **argv) {
     for (int i = 0; i < monoAudio.getNumSamples(); ++i)
         if (!std::isfinite(monoAudio.getSample(0, i)))
             return 1;
-    std::puts("PASS: state restoration, control layout, all six dark/light palettes, oversized host buffer");
+    std::puts("PASS: host-thread bank recall, legacy state restoration, control layout, all six palettes, "
+              "oversized buffers");
     return 0;
 }

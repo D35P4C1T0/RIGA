@@ -66,6 +66,8 @@ Enable `-DSTRIP_EDITOR_CHECK=ON` in a JUCE build for the editor snapshot and sta
 strip-render input.f32 output.f32 [parameters.txt] [sample-rate] [block-size] [noise-seed] [settle-frames]
 ```
 
+Input and output must name different files, including hard links and symbolic links. A render replaces its output only after processing and file writes succeed.
+
 Parameter files contain one stable key and normalized value per line, such as `highGain 0.75`. Keys and defaults are defined in `Source/Parameters.h`. A fixed noise seed makes repeated renders deterministic. The optional settling interval processes silence and clears audio history before rendering.
 
 Compare two renders with:
