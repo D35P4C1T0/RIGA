@@ -5,6 +5,48 @@ namespace {
 struct Palette {
     juce::Colour background{0xffeeede7}, panel{0xfffaf9f5}, ink{0xff202320}, muted{0xff70736c};
     juce::Colour red{0xffdf3c2f}, rule{0xffd4d5cc}, track{0xffdedfd6};
+    juce::Colour onPrimary{0xffffffff}, secondary{0xffdf3c2f}, onSecondary{0xffffffff};
+};
+struct Theme {
+    const char *name;
+    Palette light, dark;
+};
+const Theme themes[]{
+    {"Arctic Blue",
+     {juce::Colour(0xfff7f9fc), juce::Colour(0xffffffff), juce::Colour(0xff121826), juce::Colour(0xff58677b),
+      juce::Colour(0xff335cff), juce::Colour(0xffe2e8f0), juce::Colour(0xffe2e8f0), juce::Colour(0xffffffff),
+      juce::Colour(0xff13b8a6), juce::Colour(0xff052e2b)},
+     {juce::Colour(0xff0d1321), juce::Colour(0xff182338), juce::Colour(0xfff3f7ff), juce::Colour(0xffaab6c9),
+      juce::Colour(0xff8aa2ff), juce::Colour(0xff303e55), juce::Colour(0xff303e55), juce::Colour(0xff0b1844),
+      juce::Colour(0xff45dbc9), juce::Colour(0xff073a35)}},
+    {"Midnight Mint",
+     {juce::Colour(0xfff4f8fa), juce::Colour(0xffffffff), juce::Colour(0xff14212d), juce::Colour(0xff566c79),
+      juce::Colour(0xff087d75), juce::Colour(0xffdce6eb), juce::Colour(0xffdce6eb), juce::Colour(0xffffffff),
+      juce::Colour(0xff7054cc), juce::Colour(0xffffffff)},
+     {juce::Colour(0xff0b1220), juce::Colour(0xff161f30), juce::Colour(0xfff3f7fb), juce::Colour(0xffa7b5c7),
+      juce::Colour(0xff68e0cf), juce::Colour(0xff303d52), juce::Colour(0xff303d52), juce::Colour(0xff072725),
+      juce::Colour(0xffa78bfa), juce::Colour(0xff21153b)}},
+    {"Warm Editorial",
+     {juce::Colour(0xfff8f3ea), juce::Colour(0xfffffcf7), juce::Colour(0xff322c2a), juce::Colour(0xff70645e),
+      juce::Colour(0xffb6533d), juce::Colour(0xffe4d9ce), juce::Colour(0xffe4d9ce), juce::Colour(0xffffffff),
+      juce::Colour(0xff78926a), juce::Colour(0xff102214)},
+     {juce::Colour(0xff1b1917), juce::Colour(0xff292522), juce::Colour(0xfff7f0e8), juce::Colour(0xffc1b2a5),
+      juce::Colour(0xffe49a82), juce::Colour(0xff443b34), juce::Colour(0xff443b34), juce::Colour(0xff34201a),
+      juce::Colour(0xffb1c39e), juce::Colour(0xff1f3021)}},
+    {"Digital Lavender",
+     {juce::Colour(0xfff6f4ff), juce::Colour(0xffffffff), juce::Colour(0xff24213a), juce::Colour(0xff69627d),
+      juce::Colour(0xff7357eb), juce::Colour(0xffe5e0f5), juce::Colour(0xffe5e0f5), juce::Colour(0xffffffff),
+      juce::Colour(0xffe5a9c6), juce::Colour(0xff45283b)},
+     {juce::Colour(0xff151225), juce::Colour(0xff231d38), juce::Colour(0xfff6f3ff), juce::Colour(0xffb5abc9),
+      juce::Colour(0xffb5a4ff), juce::Colour(0xff403653), juce::Colour(0xff403653), juce::Colour(0xff241a4d),
+      juce::Colour(0xfff0b9d7), juce::Colour(0xff44243b)}},
+    {"Graphite Lime",
+     {juce::Colour(0xfff7f8f4), juce::Colour(0xffffffff), juce::Colour(0xff202725), juce::Colour(0xff5d6b65),
+      juce::Colour(0xff496d00), juce::Colour(0xffdde3db), juce::Colour(0xffdde3db), juce::Colour(0xffffffff),
+      juce::Colour(0xff087a7c), juce::Colour(0xffffffff)},
+     {juce::Colour(0xff111417), juce::Colour(0xff23282a), juce::Colour(0xfff4f3ef), juce::Colour(0xffb5bfba),
+      juce::Colour(0xffd9ff57), juce::Colour(0xff3b4544), juce::Colour(0xff3b4544), juce::Colour(0xff243000),
+      juce::Colour(0xff61c0bf), juce::Colour(0xff092f32)}},
 };
 juce::Font type(float size, bool bold = false) {
     return juce::Font(juce::FontOptions(
@@ -138,22 +180,25 @@ juce::String shortName(strip::Param p) {
 class StripAudioProcessorEditor::Style final : public juce::LookAndFeel_V4, public Palette {
   public:
     Style() {
-        setDark(true);
+        setTheme(0, true);
     }
-    void setDark(bool dark) {
+    void setTheme(int selected, bool dark) {
         static_cast<Palette &>(*this) =
             dark ? Palette{juce::Colour(0xff161918), juce::Colour(0xff202422), juce::Colour(0xffeeede7),
                            juce::Colour(0xffa6ada6), juce::Colour(0xfff05a47), juce::Colour(0xff414843),
-                           juce::Colour(0xff353d37)}
+                           juce::Colour(0xff353d37), juce::Colours::white,     juce::Colour(0xfff05a47),
+                           juce::Colours::white}
                  : Palette{};
+        if (selected > 0)
+            static_cast<Palette &>(*this) = dark ? themes[selected - 1].dark : themes[selected - 1].light;
         setColour(juce::Label::textColourId, ink);
         setColour(juce::ComboBox::backgroundColourId, panel);
         setColour(juce::ComboBox::outlineColourId, rule);
         setColour(juce::ComboBox::textColourId, ink);
         setColour(juce::PopupMenu::backgroundColourId, panel);
         setColour(juce::PopupMenu::textColourId, ink);
-        setColour(juce::PopupMenu::highlightedBackgroundColourId, red);
-        setColour(juce::PopupMenu::highlightedTextColourId, juce::Colours::white);
+        setColour(juce::PopupMenu::highlightedBackgroundColourId, secondary);
+        setColour(juce::PopupMenu::highlightedTextColourId, onSecondary);
         setColour(juce::TooltipWindow::backgroundColourId, ink);
         setColour(juce::TooltipWindow::textColourId, panel);
         setColour(juce::TooltipWindow::outlineColourId, ink);
@@ -233,17 +278,24 @@ class StripAudioProcessorEditor::Style final : public juce::LookAndFeel_V4, publ
             g.setColour(hover ? muted : rule);
             g.drawRect(r, .7f);
         }
-        g.setColour(active ? juce::Colours::white : ink);
+        g.setColour(active ? onPrimary : ink);
         g.setFont(type(9.5f, true));
         g.drawFittedText(button.getButtonText(), r.toNearestInt().reduced(4, 1), juce::Justification::centred,
                          2);
     }
-    void drawComboBox(juce::Graphics &g, int w, int h, bool, int, int, int, int, juce::ComboBox &) override {
+    void drawComboBox(juce::Graphics &g, int w, int h, bool, int, int, int, int,
+                      juce::ComboBox &box) override {
         auto r = juce::Rectangle<float>(.5f, .5f, float(w) - 1, float(h) - 1);
         g.setColour(panel);
         g.fillRect(r);
         g.setColour(rule);
         g.drawRect(r, .7f);
+        if (box.getComponentID() == "palette") {
+            g.setColour(box.hasKeyboardFocus(true) ? red : ink);
+            for (int i = 0; i < 3; ++i)
+                g.fillRect(6, h / 2 - 6 + i * 5, w - 12, 2);
+            return;
+        }
         juce::Path arrow;
         arrow.startNewSubPath(float(w) - 15, float(h) * .45f);
         arrow.lineTo(float(w) - 11, float(h) * .6f);
@@ -252,6 +304,10 @@ class StripAudioProcessorEditor::Style final : public juce::LookAndFeel_V4, publ
         g.strokePath(arrow, juce::PathStrokeType(1));
     }
     void positionComboBoxText(juce::ComboBox &box, juce::Label &label) override {
+        if (box.getComponentID() == "palette") {
+            label.setBounds(0, 0, 0, 0);
+            return;
+        }
         label.setBounds(7, 1, box.getWidth() - 25, box.getHeight() - 2);
         label.setFont(type(11.5f));
     }
@@ -440,8 +496,21 @@ StripAudioProcessorEditor::StripAudioProcessorEditor(StripAudioProcessor &p)
     theme.setButtonText("DARK");
     theme.setTooltip("Switch between dark and light themes");
     theme.setToggleState(true, juce::dontSendNotification);
+    palette.setComponentID("palette");
+    palette.setTooltip("Choose a colour palette");
+    palette.setTitle("Colour palette");
+    palette.addItem("Original", 1);
+    for (int i = 0; i < int(std::size(themes)); ++i)
+        palette.addItem(themes[i].name, i + 2);
+    palette.setSelectedId(1, juce::dontSendNotification);
+    palette.onChange = [this] {
+        style->setTheme(palette.getSelectedId() - 1, theme.getToggleState());
+        sendLookAndFeelChange();
+        repaint();
+    };
+    addAndMakeVisible(palette);
     theme.onClick = [this] {
-        style->setDark(theme.getToggleState());
+        style->setTheme(palette.getSelectedId() - 1, theme.getToggleState());
         theme.setButtonText(theme.getToggleState() ? "DARK" : "LIGHT");
         sendLookAndFeelChange();
         repaint();
@@ -459,8 +528,9 @@ void StripAudioProcessorEditor::place(strip::Param p, int x, int y, int w, int h
 }
 void StripAudioProcessorEditor::resized() {
     using P = strip::Param;
-    theme.setBounds(378, 24, 62, 26);
-    place(P::setting, 302, 10, 66, 44);
+    palette.setBounds(418, 24, 26, 26);
+    theme.setBounds(348, 24, 62, 26);
+    place(P::setting, 272, 10, 66, 44);
     place(P::bypass, 450, 24, 74, 26);
     place(P::hpfFreq, 28, 104, 100, 76);
     place(P::lpfFreq, 140, 104, 100, 76);
@@ -515,7 +585,13 @@ void StripAudioProcessorEditor::resized() {
 }
 
 void StripAudioProcessorEditor::paint(juce::Graphics &g) {
-    const auto [background, panel, ink, muted, red, rule, track] = static_cast<const Palette &>(*style);
+    const auto &background = style->background;
+    const auto &panel = style->panel;
+    const auto &ink = style->ink;
+    const auto &muted = style->muted;
+    const auto &red = style->red;
+    const auto &rule = style->rule;
+    const auto &track = style->track;
     g.fillAll(background);
     auto section = [&g, this](int x, int y, int w, int h, const juce::String &number,
                               const juce::String &title) {
@@ -537,7 +613,7 @@ void StripAudioProcessorEditor::paint(juce::Graphics &g) {
     g.fillRect(112, 40, 7, 7);
     g.setColour(ink);
     g.setFont(type(11));
-    g.drawText("Tone / Dynamics", 140, 19, 150, 18, juce::Justification::centredLeft);
+    g.drawText("Tone / Dynamics", 140, 19, 122, 18, juce::Justification::centredLeft);
     g.setColour(muted);
     g.setFont(type(9));
     g.drawText("LOCAL AUDIO", 140, 36, 150, 14, juce::Justification::centredLeft);
